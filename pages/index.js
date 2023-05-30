@@ -14,12 +14,20 @@ import {
     deleteDoc,
     updateDoc,
     doc,
+    serverTimestamp,
 } from "firebase/firestore";
-import { db } from "../firebase/firebase";
+import { db, storage } from "../firebase/firebase";
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 
 export default function Home() {
-    const [todoInput, setTodoInput] = useState("");
-    const [todos, setTodos] = useState([]);
+    const [file, setFile] = useState("");
+
+    const [per, setPerc] = useState(null);
+    const [todos, setTodos] = useState({
+        Nname: '',
+        Nprice: '',
+        Ndescription: ''
+    });
 
     const { signOut, authUser, isLoading } = useAuth();
     const router = useRouter();
@@ -31,35 +39,71 @@ export default function Home() {
         if (!!authUser) {
             fetchTodos(authUser.uid);
         }
-    }, [authUser, isLoading]);
+    }, [authUser, isLoading, router]);
+
+
+    useEffect(() => {
+        const uploadFile = () => {
+            const name = new Date().getTime() + file.name;
+
+            console.log(name);
+            const storageRef = ref(storage, file.name);
+            const uploadTask = uploadBytesResumable(storageRef, file);
+
+            uploadTask.on(
+                "state_changed",
+                (snapshot) => {
+                    const progress =
+                        (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                    console.log("Upload is " + progress + "% done");
+                    setPerc(progress);
+                    switch (snapshot.state) {
+                        case "paused":
+                            console.log("Upload is paused");
+                            break;
+                        case "running":
+                            console.log("Upload is running");
+                            break;
+                        default:
+                            break;
+                    }
+                },
+                (error) => {
+                    console.log(error);
+                },
+                () => {
+                    getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
+                        setTodos((prev) => ({ ...prev, img: downloadURL }));
+                    });
+                }
+            );
+        };
+        file && uploadFile();
+    }, [file]);
+
+    console.log(todos)
+
 
     /**
-     * Fetches all the todos for a given user ID from Firestore and sets the todos state with the data.
-     *
      * @param {string} uid - The user ID to fetch todos for.
      * @return {void}
      */
     const fetchTodos = async (uid) => {
         try {
-            // Create a Firestore query to fetch all the todos for the user with the given ID.
-            const q = query(collection(db, "todos"), where("owner", "==", uid));
-
-            // Execute the query and get a snapshot of the results.
+            const q = query(collection(db, "namkeen"), where("owner", "==", uid));
             const querySnapshot = await getDocs(q);
 
-            // Extract the data from each todo document and add it to the data array.
             let data = [];
             querySnapshot.forEach((todo) => {
-                console.log(todo);
                 data.push({ ...todo.data(), id: todo.id });
             });
 
-            // Set the todos state with the data array.
             setTodos(data);
         } catch (error) {
-            console.error("An error occured", error);
+            console.error("An error occurred", error);
         }
     };
+
 
     const onKeyUp = (event) => {
         if (event?.key === "Enter" && todoInput?.length > 0) {
@@ -67,21 +111,26 @@ export default function Home() {
         }
     };
 
-    const addToDo = async () => {
+    const inputEvent = (e) => {
+        e.preventDefault();
+        const name = e.target.name;
+        const value = e.target.value;
+        setTodos({ ...todos, [name]: value });
+    }
+
+
+
+    const addToDo = async (e) => {
+        e.preventDefault();
         try {
-            // Add a new todo document to the "todos" collection in Firestore with the current user's ID,
-            // the content of the todo input, and a completed status of false.
-            const docRef = await addDoc(collection(db, "todos"), {
-                owner: authUser.uid,
-                content: todoInput,
-                completed: false,
+            await addDoc(collection(db, "namkeen"), {
+                ...todos,
+                timeStamp: serverTimestamp(),
             });
 
-            // After adding the new todo, fetch all todos for the current user and update the state with the new data.
             fetchTodos(authUser.uid);
 
-            // Clear the todo input field.
-            setTodoInput("");
+            setTodos({ Nname: '', Nprice: '', Ndescription: '', Nimage: '' });
         } catch (error) {
             console.error("An error occured", error);
         }
@@ -89,27 +138,7 @@ export default function Home() {
 
     const deleteTodo = async (docId) => {
         try {
-            // Delete the todo document with the given ID from the "todos" collection in Firestore.
             await deleteDoc(doc(db, "todos", docId));
-
-            // After deleting the todo, fetch all todos for the current user and update the state with the new data.
-            fetchTodos(authUser.uid);
-        } catch (error) {
-            console.error("An error occured", error);
-        }
-    };
-
-    const makeAsCompleteHander = async (event, docId) => {
-        try {
-            // Get a reference to the todo document with the given ID in the "todos" collection in Firestore.
-            const todoRef = doc(db, "todos", docId);
-
-            // Update the "completed" field of the todo document to the value of the "checked" property of the event target.
-            await updateDoc(todoRef, {
-                completed: event.target.checked,
-            });
-
-            // After updating the todo, fetch all todos for the current user and update the state with the new data.
             fetchTodos(authUser.uid);
         } catch (error) {
             console.error("An error occured", error);
@@ -135,51 +164,68 @@ export default function Home() {
                             ToooDooo's
                         </h1>
                     </div>
-                    <div className="flex items-center gap-2 mt-10">
+                    <form className="flex items-center flex-col w-full gap-2 mt-10" onSubmit={addToDo}>
                         <input
                             placeholder={`👋 Hello ${authUser.username}, What to do Today?`}
                             type="text"
                             className="font-semibold placeholder:text-gray-500 border-[2px] border-black h-[60px] grow shadow-sm rounded-md px-4 focus-visible:outline-yellow-400 text-lg transition-all duration-300"
                             autoFocus
-                            value={todoInput}
-                            onChange={(e) => setTodoInput(e.target.value)}
+                            value={todos.Nname}
+                            onChange={inputEvent}
+                            onKeyUp={(e) => onKeyUp(e)}
+                            name="Nname"
+                        />
+                        <input
+                            placeholder={`👋 Hello ${authUser.username}, What to do Today?`}
+                            type="text"
+                            className="font-semibold placeholder:text-gray-500 border-[2px] border-black h-[60px] grow shadow-sm rounded-md px-4 focus-visible:outline-yellow-400 text-lg transition-all duration-300"
+                            autoFocus
+                            value={todos.Nprice}
+                            onChange={inputEvent}
+                            onKeyUp={(e) => onKeyUp(e)}
+                            name="Nprice"
+                        />
+                        <input
+                            placeholder={`👋 Hello ${authUser.username}, What to do Today?`}
+                            type="text"
+                            className="font-semibold placeholder:text-gray-500 border-[2px] border-black h-[60px] grow shadow-sm rounded-md px-4 focus-visible:outline-yellow-400 text-lg transition-all duration-300"
+                            autoFocus
+                            value={todos.Ndescription}
+                            onChange={inputEvent}
+                            onKeyUp={(e) => onKeyUp(e)}
+                            name="Ndescription"
+                        />
+                        <input
+                            placeholder={`👋 Hello ${authUser.username}, What to do Today?`}
+                            type="file"
+                            className="font-semibold placeholder:text-gray-500 border-[2px] border-black h-[60px] grow shadow-sm rounded-md px-4 focus-visible:outline-yellow-400 text-lg transition-all duration-300"
+                            autoFocus
+                            value={todos.Nimage}
+                            onChange={(e) => setFile(e.target.files[0])}
                             onKeyUp={(e) => onKeyUp(e)}
                         />
                         <button
-                            className="w-[60px] h-[60px] rounded-md bg-black flex justify-center items-center cursor-pointer transition-all duration-300 hover:bg-black/[0.8]"
-                            onClick={addToDo}
+                            className="w-[300px] h-[60px] rounded-md bg-black flex justify-center items-center cursor-pointer transition-all duration-300 hover:bg-black/[0.8]"
+                            type="submit"
                         >
-                            <AiOutlinePlus size={30} color="#fff" />
+                            <AiOutlinePlus size={30} color="#fff" /> &nbsp; <p className="text-white font-semibold">Add Namkeen</p>
                         </button>
-                    </div>
+                    </form>
                 </div>
                 <div className="my-10">
                     {todos.length > 0 &&
                         todos.map((todo) => (
-                            <div
-                                key={todo.id}
-                                className="flex items-center justify-between mt-4"
-                            >
+                            <div key={todo.id} className="flex items-center justify-between mt-4">
                                 <div className="flex items-center gap-3">
                                     <input
                                         id={`todo-${todo.id}`}
                                         type="checkbox"
                                         className="w-4 h-4 accent-green-400 rounded-lg"
                                         checked={todo.completed}
-                                        onChange={(e) =>
-                                            makeAsCompleteHander(e, todo.id)
-                                        }
+                                        onChange={(e) => makeAsCompleteHandler(e, todo.id)}
                                     />
-                                    <label
-                                        htmlFor={`todo-${todo.id}`}
-                                        className={`font-medium ${
-                                            todo.completed ? "line-through" : ""
-                                        }`}
-                                    >
-                                        {todo.content}
-                                    </label>
+                                    <span>{todo?.id.Nname}</span>
                                 </div>
-
                                 <div className="flex items-center gap-3">
                                     <MdDeleteForever
                                         size={24}
