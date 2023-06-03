@@ -14,20 +14,20 @@ import {
     deleteDoc,
     updateDoc,
     doc,
-    serverTimestamp,
 } from "firebase/firestore";
 import { db, storage } from "../firebase/firebase";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import NamkeenList from '@/components/NamkeenList'
+import Image from 'next/image';
+
 
 export default function Home() {
-    const [file, setFile] = useState("");
-
-    const [per, setPerc] = useState(null);
-    const [todos, setTodos] = useState({
-        Nname: '',
-        Nprice: '',
-        Ndescription: ''
-    });
+    const [itemName, setItemName] = useState("");
+    const [description, setDescription] = useState("");
+    const [price, setPrice] = useState("");
+    const [quantity, setQuantity] = useState("");
+    const [namkeen, setNamkeen] = useState([]);
+    const [file, setFile] = useState(""); // Added file state
 
     const { signOut, authUser, isLoading } = useAuth();
     const router = useRouter();
@@ -37,111 +37,125 @@ export default function Home() {
             router.push("/login");
         }
         if (!!authUser) {
-            fetchTodos(authUser.uid);
+            fetchNamkeen(authUser.uid);
         }
-    }, [authUser, isLoading, router]);
-
+    }, [authUser, isLoading]);
 
     useEffect(() => {
         const uploadFile = () => {
             const name = new Date().getTime() + file.name;
-
-            console.log(name);
             const storageRef = ref(storage, file.name);
+
             const uploadTask = uploadBytesResumable(storageRef, file);
 
-            uploadTask.on(
-                "state_changed",
+            uploadTask.on('state_changed',
                 (snapshot) => {
-                    const progress =
-                        (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                    console.log("Upload is " + progress + "% done");
-                    setPerc(progress);
+                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                    console.log('Upload is ' + progress + '% done');
                     switch (snapshot.state) {
-                        case "paused":
-                            console.log("Upload is paused");
+                        case 'paused':
+                            console.log('Upload is paused');
                             break;
-                        case "running":
-                            console.log("Upload is running");
+                        case 'running':
+                            console.log('Upload is running');
                             break;
                         default:
                             break;
                     }
                 },
                 (error) => {
-                    console.log(error);
+                    console.log(error)
                 },
                 () => {
                     getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
-                        setTodos((prev) => ({ ...prev, img: downloadURL }));
+                        setNamkeen((prev) => ({ ...prev, img: downloadURL }));
                     });
                 }
             );
-        };
-        file && uploadFile();
-    }, [file]);
+        }
+        file && uploadFile()
+    }, [file])
 
-    console.log(todos)
-
-
-    /**
-     * @param {string} uid - The user ID to fetch todos for.
-     * @return {void}
-     */
-    const fetchTodos = async (uid) => {
+    const fetchNamkeen = async (uid) => {
         try {
             const q = query(collection(db, "namkeen"), where("owner", "==", uid));
             const querySnapshot = await getDocs(q);
 
             let data = [];
-            querySnapshot.forEach((todo) => {
-                data.push({ ...todo.data(), id: todo.id });
+            querySnapshot.forEach((namkeen) => {
+                data.push({ ...namkeen.data(), id: namkeen.id });
             });
 
-            setTodos(data);
+            setNamkeen(data);
         } catch (error) {
             console.error("An error occurred", error);
         }
     };
 
-
-    const onKeyUp = (event) => {
-        if (event?.key === "Enter" && todoInput?.length > 0) {
-            addToDo();
-        }
-    };
-
-    const inputEvent = (e) => {
-        e.preventDefault();
-        const name = e.target.name;
-        const value = e.target.value;
-        setTodos({ ...todos, [name]: value });
-    }
-
-
-
-    const addToDo = async (e) => {
-        e.preventDefault();
+    const addNamkeen = async () => {
         try {
-            await addDoc(collection(db, "namkeen"), {
-                ...todos,
-                timeStamp: serverTimestamp(),
+            const docRef = await addDoc(collection(db, "namkeen"), {
+                owner: authUser.uid,
+                itemName: itemName,
+                description: description,
+                price: price,
+                quantity: quantity,
+                imageUrl: "", // Initialize imageUrl as an empty string
+                completed: false,
             });
 
-            fetchTodos(authUser.uid);
+            if (file) {
+                // Upload the image if a file is selected
+                const storageRef = ref(storage, `${file.name + new Date()}`);
+                const uploadTask = uploadBytesResumable(storageRef, file);
 
-            setTodos({ Nname: '', Nprice: '', Ndescription: '', Nimage: '' });
+                uploadTask.on(
+                    "state_changed",
+                    (snapshot) => {
+                        // Handle progress or monitoring the upload process, if needed
+                    },
+                    (error) => {
+                        console.error("An error occurred while uploading the image", error);
+                    },
+                    () => {
+                        // Upload complete, get the download URL
+                        getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
+                            // Update the imageUrl in the Firestore document
+                            updateImageUrl(docRef.id, downloadURL);
+                        });
+                    }
+                );
+            }
+
+            fetchNamkeen(authUser.uid);
+
+            // Clear the input fields and file state
+            setItemName("");
+            setDescription("");
+            setPrice("");
+            setQuantity("");
+            setFile(null);
         } catch (error) {
-            console.error("An error occured", error);
+            console.error("An error occurred", error);
         }
     };
 
-    const deleteTodo = async (docId) => {
+    const deleteNamkeen = async (docId) => {
         try {
-            await deleteDoc(doc(db, "todos", docId));
-            fetchTodos(authUser.uid);
+            await deleteDoc(doc(db, "namkeen", docId));
+            fetchNamkeen(authUser.uid);
         } catch (error) {
-            console.error("An error occured", error);
+            console.error("An error occurred", error);
+        }
+    };
+
+    const updateImageUrl = async (docId, imageUrl) => {
+        try {
+            await updateDoc(doc(db, "namkeen", docId), {
+                imageUrl: imageUrl,
+            });
+        } catch (error) {
+            console.error("An error occurred", error);
         }
     };
 
@@ -158,86 +172,101 @@ export default function Home() {
             </div>
             <div className="max-w-3xl mx-auto mt-10 p-8">
                 <div className="bg-white -m-6 p-3 sticky top-0">
-                    <div className="flex justify-center flex-col items-center">
-                        <span className="text-7xl mb-10">📝</span>
-                        <h1 className="text-5xl md:text-7xl font-bold">
-                            ToooDooo's
+                    <div className="flex justify-center items-center">
+                        <Image
+                            src="/nachos.png"
+                            alt="Namkeen Image"
+                            width={40}
+                            height={40}
+                        />
+                        <h1 className="pl-5 mt-2 text-3xl md:text-3xl font-bold">
+                            Namkeen
                         </h1>
                     </div>
-                    <form className="flex items-center flex-col w-full gap-2 mt-10" onSubmit={addToDo}>
-                        <input
-                            placeholder={`👋 Hello ${authUser.username}, What to do Today?`}
-                            type="text"
-                            className="font-semibold placeholder:text-gray-500 border-[2px] border-black h-[60px] grow shadow-sm rounded-md px-4 focus-visible:outline-yellow-400 text-lg transition-all duration-300"
-                            autoFocus
-                            value={todos.Nname}
-                            onChange={inputEvent}
-                            onKeyUp={(e) => onKeyUp(e)}
-                            name="Nname"
-                        />
-                        <input
-                            placeholder={`👋 Hello ${authUser.username}, What to do Today?`}
-                            type="text"
-                            className="font-semibold placeholder:text-gray-500 border-[2px] border-black h-[60px] grow shadow-sm rounded-md px-4 focus-visible:outline-yellow-400 text-lg transition-all duration-300"
-                            autoFocus
-                            value={todos.Nprice}
-                            onChange={inputEvent}
-                            onKeyUp={(e) => onKeyUp(e)}
-                            name="Nprice"
-                        />
-                        <input
-                            placeholder={`👋 Hello ${authUser.username}, What to do Today?`}
-                            type="text"
-                            className="font-semibold placeholder:text-gray-500 border-[2px] border-black h-[60px] grow shadow-sm rounded-md px-4 focus-visible:outline-yellow-400 text-lg transition-all duration-300"
-                            autoFocus
-                            value={todos.Ndescription}
-                            onChange={inputEvent}
-                            onKeyUp={(e) => onKeyUp(e)}
-                            name="Ndescription"
-                        />
-                        <input
-                            placeholder={`👋 Hello ${authUser.username}, What to do Today?`}
-                            type="file"
-                            className="font-semibold placeholder:text-gray-500 border-[2px] border-black h-[60px] grow shadow-sm rounded-md px-4 focus-visible:outline-yellow-400 text-lg transition-all duration-300"
-                            autoFocus
-                            value={todos.Nimage}
-                            onChange={(e) => setFile(e.target.files[0])}
-                            onKeyUp={(e) => onKeyUp(e)}
-                        />
-                        <button
-                            className="w-[300px] h-[60px] rounded-md bg-black flex justify-center items-center cursor-pointer transition-all duration-300 hover:bg-black/[0.8]"
-                            type="submit"
-                        >
-                            <AiOutlinePlus size={30} color="#fff" /> &nbsp; <p className="text-white font-semibold">Add Namkeen</p>
-                        </button>
-                    </form>
-                </div>
-                <div className="my-10">
-                    {todos.length > 0 &&
-                        todos.map((todo) => (
-                            <div key={todo.id} className="flex items-center justify-between mt-4">
-                                <div className="flex items-center gap-3">
-                                    <input
-                                        id={`todo-${todo.id}`}
-                                        type="checkbox"
-                                        className="w-4 h-4 accent-green-400 rounded-lg"
-                                        checked={todo.completed}
-                                        onChange={(e) => makeAsCompleteHandler(e, todo.id)}
-                                    />
-                                    <span>{todo?.id.Nname}</span>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <MdDeleteForever
-                                        size={24}
-                                        className="text-red-400 hover:text-red-600 cursor-pointer"
-                                        onClick={() => deleteTodo(todo.id)}
-                                    />
-                                </div>
-                            </div>
-                        ))}
+                    <div className="flex flex-col items-center gap-2 mt-10">
+                        <div className="flex items-center gap-2 mt-10">
+                            <input
+                                placeholder={`Name`}
+                                type="text"
+                                className="font-semibold placeholder:text-gray-500 border-[2px] border-black h-[60px] grow shadow-sm rounded-md px-4 focus-visible:outline-yellow-400 text-lg transition-all duration-300"
+                                autoFocus
+                                value={itemName}
+                                onChange={(e) => setItemName(e.target.value)}
+                            />
 
-                    {todos.length < 1 && (
-                        <span className="text-center w-full block text-2xl font-medium text-gray-400 mt-28">{`🥹 You don't have todo's`}</span>
+                            <div className="flex w-[300px] h-[60px] items-center justify-center bg-grey-lighter grow shadow-sm rounded-md cursor-pointer">
+                                <label className="font-semibold w-[40px] flex justify-center gap-2 items-center placeholder:text-gray-500 border-[2px] border-black  cursor-pointer h-[60px] grow shadow-sm rounded-md px-4 focus-visible:outline-yellow-400 text-lg transition-all duration-300">
+                                    <svg className="w-[40px] h-[40px]  cursor-pointer" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                                        <path d="M16.88 9.1A4 4 0 0 1 16 17H5a5 5 0 0 1-1-9.9V7a3 3 0 0 1 4.52-2.59A4.98 4.98 0 0 1 17 8c0 .38-.04.74-.12 1.1zM11 11h3l-4-4-4 4h3v3h2v-3z" />
+                                    </svg>
+                                    <span className="mt-1 font-semibold text-base leading-normal">Select a file</span>
+                                    <input
+                                        type='file'
+                                        className="hidden"
+                                        onChange={(e) => setFile(e.target.files[0])}
+                                    />
+                                </label>
+                            </div>
+
+                        </div>
+                        <div className="flex items-center gap-2 mt-5">
+                            <input
+                                placeholder="Price"
+                                type="text"
+                                className="font-semibold placeholder:text-gray-500 border-[2px] border-black h-[60px] grow shadow-sm rounded-md px-4 focus-visible:outline-yellow-400 text-lg transition-all duration-300"
+                                value={price}
+                                onChange={(e) => setPrice(e.target.value)}
+                            />
+                            <input
+                                placeholder="Quantity"
+                                type="text"
+                                className="font-semibold placeholder:text-gray-500 border-[2px] border-black h-[60px] grow shadow-sm rounded-md px-4 focus-visible:outline-yellow-400 text-lg transition-all duration-300"
+                                value={quantity}
+                                onChange={(e) => setQuantity(e.target.value)}
+                            />
+                        </div>
+
+                        <textarea
+                            placeholder="Description"
+                            type="text"
+                            className="font-semibold w-5/6 placeholder:text-gray-500 border-[2px] border-black h-28 mt-5 grow shadow-sm rounded-md px-4 focus-visible:outline-yellow-400 text-lg transition-all duration-300"
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                        />
+
+                        <button
+                            className="w-[250px] h-[60px] rounded-md bg-black flex mt-10 justify-center items-center cursor-pointer transition-all duration-300 hover:bg-black/[0.8]"
+                            onClick={addNamkeen}
+                        >
+                            <AiOutlinePlus size={30} color="#fff" />
+                            <span className="pl-2 text-white font-semibold text-base leading-normal">Add Namkeen</span>
+
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div className="max-w-5xl mx-auto mt-10 p-8">
+                <div className="mt-10 absolute w-1/2">
+                    {namkeen.length > 0 ? (
+                        <table className="w-full border-collapse text-center">
+                            <thead>
+                                <tr className="bg-gray-200">
+                                    <th className="border p-2">Image</th>
+                                    <th className="border p-2">Item Name</th>
+                                    <th className="border p-2">Description</th>
+                                    <th className="border p-2">Price</th>
+                                    <th className="border p-2">Quantity</th>
+                                    <th className="border p-2">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {namkeen.map((item) => (
+                                    <NamkeenList key={item.id} item={item} deleteNamkeen={deleteNamkeen} />
+                                ))}
+                            </tbody>
+                        </table>
+                    ) : (
+                        <p className="pl-5 mt-2 text-3xl md:text-3xl font-bold w-full text-center">No namkeen items found.</p>
                     )}
                 </div>
             </div>
