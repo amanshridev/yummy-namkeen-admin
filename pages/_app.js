@@ -5,7 +5,7 @@ export default function App({ Component, pageProps }) {
     return (
         <>
             <Head>
-                <title>JS Dev - Todo App</title>
+                <title>Yummy Namkeen | Admin Pannel</title>
             </Head>
             <AuthUserProvider>
                 <Component {...pageProps} />
